@@ -1,0 +1,7 @@
+account_type,daily_limit_eur,monthly_limit_eur,single_transfer_limit_eur,foreign_transfer_allowed,foreign_daily_limit_eur,atm_daily_limit_eur,instant_payment_limit_eur
+standard,5000,50000,5000,true,2000,500,15000
+premium,50000,500000,50000,true,20000,3000,100000
+business_basic,25000,250000,25000,true,10000,2000,50000
+business_pro,200000,2000000,200000,true,100000,10000,100000
+student,1000,10000,1000,false,0,200,5000
+joint,10000,100000,10000,true,5000,1000,30000
