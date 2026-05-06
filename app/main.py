@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_app() -> FastAPI:
     settings = get_settings()
-
+     # TODO: remove after confirming settings load correctly
     app = FastAPI(
         title="Secure Hybrid RAG Search",
         description="Fintech knowledge base with lexical, vector, and hybrid retrieval.",

@@ -1,4 +1,6 @@
-from opensearchpy import AsyncOpenSearch
+import copy
+
+from opensearchpy import AsyncOpenSearch, NotFoundError
 
 from app.indexing.opensearch_indexer import INDEX_MAPPING
 
@@ -18,8 +20,6 @@ class IndexManager:
     downtime or a full re-crawl of the knowledge base.
 
     TODO (Phase 1):
-      - Implement create_index_if_not_exists() using the INDEX_MAPPING constant.
-      - Implement create_alias() that points the alias to the versioned index.
       - TODO (Phase 4 advanced):
           - Implement reindex() that creates a new versioned index, bulk-copies
             documents via OpenSearch _reindex API, runs smoke-test queries,
@@ -41,24 +41,25 @@ class IndexManager:
         """
         Create the versioned index + alias if they don't already exist.
         Returns True if the index was created, False if it already existed.
-
-        TODO: patch INDEX_MAPPING's knn_vector dimension from self._embedding_dimensions.
         """
         exists = await self._client.indices.exists(index=self._versioned)
         if exists:
             return False
 
-        # TODO: create index with INDEX_MAPPING
-        # await self._client.indices.create(index=self._versioned, body=INDEX_MAPPING)
-        # await self.create_alias()
-        raise NotImplementedError("IndexManager.create_index_if_not_exists() — implement in Phase 1")
+        mapping = copy.deepcopy(INDEX_MAPPING)
+        mapping["mappings"]["properties"]["content_vector"]["dimension"] = self._embedding_dimensions
+        await self._client.indices.create(index=self._versioned, body=mapping)
+        await self.create_alias()
+        return True
 
     async def create_alias(self) -> None:
         """Point self._alias → self._versioned index."""
-        # TODO: await self._client.indices.put_alias(index=self._versioned, name=self._alias)
-        raise NotImplementedError
+        await self._client.indices.put_alias(index=self._versioned, name=self._alias)
 
     async def get_current_version(self) -> str | None:
         """Return the versioned index name that the alias currently points to."""
-        # TODO: await self._client.indices.get_alias(name=self._alias)
-        raise NotImplementedError
+        try:
+            result = await self._client.indices.get_alias(name=self._alias)
+            return next(iter(result), None)
+        except NotFoundError:
+            return None

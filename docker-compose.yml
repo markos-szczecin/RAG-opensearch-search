@@ -87,6 +87,18 @@ services:
         condition: service_healthy
     restart: on-failure
 
+  # ---------------------------------------------------------------------------
+  # React frontend (nginx serving built assets, proxies /api → app)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      target: runtime
+    ports:
+      - "3000:80"
+    depends_on:
+      - app
+
 volumes:
   opensearch_data:
   postgres_data:
