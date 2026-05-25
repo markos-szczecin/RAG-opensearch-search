@@ -26,24 +26,26 @@ class IndexRequest(BaseModel):
 
 
 @router.post("/index", response_model=IngestionResult, status_code=202)
-async def index_document(
-    request: IndexRequest,
-    pipeline: IngestionPipeline = Depends(get_ingestion_pipeline),
-) -> IngestionResult:
+async def index_document(request: IndexRequest,pipeline: IngestionPipeline = Depends(get_ingestion_pipeline)) -> IngestionResult:
     """
     Ingest a single document into OpenSearch.
 
     Returns 202 Accepted with stats: n_chunks, n_indexed, duration, tokens_used.
 
     TODO (Phase 1):
-      - Validate that source_path exists on disk (return 404 if not).
       - Run pipeline.ingest_file() and return the result.
       - Add background task support (FastAPI BackgroundTasks) so large
         documents don't block the HTTP response.
     """
     path = Path(request.source_path)
     if not path.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {request.source_path}")
+        raise HTTPException(status_code=404, detail=f"File not found: {path.absolute()}")
 
-    # TODO: return await pipeline.ingest_file(path, request.metadata)
-    raise HTTPException(status_code=501, detail="Indexing not yet implemented — Phase 1")
+    try:
+        return await pipeline.ingest_file(path, request.metadata)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # raise HTTPException(status_code=501, detail="Indexing not yet implemented — Phase 1")

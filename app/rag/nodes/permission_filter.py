@@ -1,22 +1,35 @@
 """
 LangGraph node: permission_filter
 
-Filters raw_chunks to only those the user is authorised to see, based on:
-  - access_level (public / internal / confidential) mapped from user_role
-  - document status (draft chunks excluded unless explicitly opted in)
-  - valid_to date (expired documents hidden from LLM context)
+Filtruje chunki znalezione przez wyszukiwanie tak, żeby do LLM trafiły TYLKO
+te, do których użytkownik ma rzeczywiste uprawnienia.
 
-This is the retrieval-layer guardrail — it runs AFTER search but BEFORE the
-LLM ever sees document content, so no unauthorised text leaks into prompts.
+Dlaczego ten węzeł istnieje skoro FilterBuilder już filtruje w zapytaniu?
+---------------------------------------------------------------------------
+Mamy dwie warstwy filtrowania po stronie dostępu:
 
-TODO (Phase 3):
-  - Import RetrievalGuardrail and call it per chunk.
-  - Log discarded chunks with reason codes for the debug endpoint.
-  - Add a "soft filter" mode that includes expired docs with a warning label
-    (useful for compliance officers reviewing historical policies).
+  Warstwa 1 — FilterBuilder (w search/filters.py):
+    Buduje klauzulę filtrowania OpenSearch i wysyła ją jako część zapytania.
+    OpenSearch GWARANTUJE, że zwrócone wyniki spełniają filtr.
+    To jest najefektywniejsza warstwa — filtrowanie odbywa się w indeksie.
+
+  Warstwa 2 — permission_filter_node (ten plik):
+    Weryfikuje każdy chunk po wyszukiwaniu, przed wysłaniem do LLM.
+    To "defence in depth" — dodatkowe zabezpieczenie na wypadek:
+      - Błędu konfiguracji FilterBuilder (np. brakujący filtr roli)
+      - Błędu wdrożenia (np. FilterBuilder nie jest używany w jakimś ścieżce)
+      - Przyszłych zmian w SearchService które pominęłyby FilterBuilder
+
+Zasada "least privilege" w RAG:
+  Lepiej odfiltrować za dużo (użytkownik nie dostanie odpowiedzi) niż za mało
+  (użytkownik zobaczy poufne informacje, które nie powinny trafić do LLM kontekstu).
+
+Ograniczenie aktualnej implementacji:
+  SearchResult nie zawiera pola valid_to (data ważności dokumentu).
+  FilterBuilder filtruje po valid_to na poziomie OpenSearch, ale tutaj
+  nie możemy sprawdzić świeżości. Rozwiązanie: dodaj valid_to do SearchResult
+  i mapuj je w _parse_response() obu serwisów wyszukiwania.
 """
-
-from datetime import date
 
 from app.config import get_settings
 from app.rag.state import RAGState
@@ -24,16 +37,43 @@ from app.rag.state import RAGState
 
 async def permission_filter_node(state: RAGState) -> dict:
     """
-    Returns filtered_chunks: subset of raw_chunks that pass access checks.
+    Filtruje raw_chunks do tych, do których user ma uprawnienia.
 
-    TODO: implement access_level + freshness filtering.
+    Algorytm:
+      1. Pobierz listę dozwolonych poziomów dostępu dla roli użytkownika.
+      2. Dla każdego chunku sprawdź czy jego access_level jest na liście.
+      3. Odrzuć chunki z niedozwolonym poziomem dostępu.
+
+    Args (ze state):
+      raw_chunks:  Lista SearchResult zwrócona przez węzeł retrieve.
+      user_role:   Rola użytkownika (np. "customer", "support_agent").
+
+    Returns (partial state):
+      filtered_chunks: Podzbiór raw_chunks z dozwolonymi poziomami dostępu.
+
+    Uwaga o "customer" vs "support_agent":
+      customer:       widzi tylko ["public"] — dokumenty FAQ, cenniki
+      support_agent:  widzi ["public", "internal"] — dodatkowe instrukcje operacyjne
+      compliance:     widzi ["public", "internal", "confidential"] — polityki wewnętrzne
+      admin:          widzi wszystkie poziomy — pełny dostęp
     """
     settings = get_settings()
     user_role = state.get("user_role", "customer")
     raw = state.get("raw_chunks", [])
 
-    # TODO: get allowed access levels from settings.role_access_levels[user_role]
-    # TODO: filter by access_level, status, and valid_to date
+    # Pobierz dozwolone poziomy dostępu dla tej roli.
+    # Nieznana rola dostaje tylko ["public"] — fail-safe default.
+    # Lepiej odmówić dostępu nieznanej roli niż przyznać za dużo.
+    allowed_levels = settings.role_access_levels.get(user_role, ["public"])
 
-    # Stub: pass all chunks through
-    return {"filtered_chunks": raw}
+    filtered = []
+    for chunk in raw:
+        # Sprawdzenie dostępu: chunk.access_level musi być na liście dozwolonych.
+        # Przykład: chunk.access_level = "internal", allowed_levels = ["public"]
+        # → "internal" nie jest w ["public"] → chunk odrzucony
+        if chunk.access_level in allowed_levels:
+            filtered.append(chunk)
+        # W przyszłości: loguj odrzucone chunki z powodem dla /debug/search endpoint
+        # (np. "chunk-003: access_level=confidential not in ['public', 'internal']")
+
+    return {"filtered_chunks": filtered}

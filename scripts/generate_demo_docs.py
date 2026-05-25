@@ -22,6 +22,8 @@ import argparse
 import asyncio
 from pathlib import Path
 
+from anthropic import AsyncAnthropic
+
 DOC_TYPES = ["policy", "faq", "procedure", "compliance", "developer"]
 ACCESS_LEVELS = ["public", "internal", "confidential"]
 
@@ -45,34 +47,69 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def generate_document(topic: str, doc_type: str, access_level: str, model: str) -> str:
-    """
-    Call Anthropic API to generate a single document.
+_DEPT_BY_TYPE = {
+    "faq": "product",
+    "developer": "engineering",
+    "compliance": "compliance",
+    "procedure": "operations",
+    "policy": "compliance",
+}
 
-    TODO:
-      - Import AsyncAnthropic and call messages.create().
-      - Use a system prompt that specifies Markdown + front matter format.
-      - Ask for 400–600 words of realistic but clearly fictional content.
-      - Return the raw Markdown string.
-    """
-    # TODO: implement real generation
-    return f"""---
-doc_id: generated-{topic.lower().replace(' ', '-')}-v1
-title: {topic}
-doc_type: {doc_type}
-department: generated
+_SYSTEM_PROMPT = """\
+You generate fictional NovaBanque fintech policy documents in Markdown format.
+NovaBanque is a fictional digital bank used strictly for demonstration purposes.
+
+Every document MUST begin with YAML front matter using exactly this structure:
+---
+doc_id: <provided-slug>
+title: <provided title>
+doc_type: <provided doc_type>
+department: <provided department>
 language: en
-access_level: {access_level}
-status: draft
+access_level: <provided access_level>
+status: approved
 valid_from: 2025-01-01
 version: 1
 ---
 
-# {topic}
-
-TODO: Generate content using Anthropic API.
-Model: {model}
+After the front matter, write 400–600 words of realistic but clearly fictional
+content for NovaBanque. Use markdown headings, bullet points, and bold text
+appropriate for the document type. Never use real company names, real people,
+or actual regulatory text verbatim.\
 """
+
+
+async def generate_document(topic: str, doc_type: str, access_level: str, model: str, client: AsyncAnthropic) -> str:
+    slug = topic.lower().replace(" ", "-")
+    department = _DEPT_BY_TYPE.get(doc_type, "operations")
+
+    response = await client.messages.create(
+        model=model,
+        max_tokens=1200,
+        system=[
+            {
+                "type": "text",
+                "text": _SYSTEM_PROMPT,
+                # Cache the system prompt across all documents in this session.
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"Write a {doc_type} document with the following front matter values:\n"
+                    f"  doc_id: {slug}-v1\n"
+                    f"  title: {topic}\n"
+                    f"  doc_type: {doc_type}\n"
+                    f"  department: {department}\n"
+                    f"  access_level: {access_level}\n\n"
+                    "Then write 400–600 words of body content."
+                ),
+            }
+        ],
+    )
+    return next(b.text for b in response.content if b.type == "text")
 
 
 async def main() -> None:
@@ -82,14 +119,13 @@ async def main() -> None:
     topics = GENERATION_TOPICS[: args.count]
     print(f"Generating {len(topics)} documents → {args.output_dir}")
 
+    client = AsyncAnthropic()
     for topic, doc_type, access_level in topics:
         filename = topic.lower().replace(" ", "_") + ".md"
-        content = await generate_document(topic, doc_type, access_level, args.model)
+        content = await generate_document(topic, doc_type, access_level, args.model, client)
         output_path = args.output_dir / filename
         output_path.write_text(content, encoding="utf-8")
         print(f"  [OK] {filename}")
-
-    print("\nTODO: implement real Anthropic API call in generate_document()")
 
 
 if __name__ == "__main__":

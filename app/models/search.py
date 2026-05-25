@@ -21,6 +21,24 @@ class SearchRequest(BaseModel):
 
 
 class SearchResult(BaseModel):
+    """
+    Jeden wynik wyszukiwania — reprezentuje fragment (chunk) dokumentu.
+
+    Dlaczego przechowujemy tutaj i chunk_id i doc_id?
+    ---------------------------------------------------
+    chunk_id identyfikuje konkretny fragment (np. "policy-001::chunk-002"),
+    natomiast doc_id identyfikuje cały dokument źródłowy ("policy-001").
+    Do deduplikacji w hybrid search używamy chunk_id (chcemy unikalne fragmenty).
+    Do cytowania w odpowiedzi używamy doc_id (cytujemy dokument, nie fragment).
+
+    Dlaczego status i version są opcjonalne (None)?
+    ------------------------------------------------
+    Pola te są przydatne w rerankerze (faworyzujemy approved > draft,
+    wyższa wersja > starsza), ale nie wszystkie ścieżki wyszukiwania
+    mapują te pola. Opcjonalność pozwala stopniowo wzbogacać wyniki
+    bez łamania istniejących wywołań. Reranker sprawdza `if chunk.status`.
+    """
+
     chunk_id: str
     doc_id: str
     title: str
@@ -29,7 +47,9 @@ class SearchResult(BaseModel):
     source_path: str
     access_level: str
     doc_type: str
-    highlight: str | None = None    # populated by keyword search highlighting
+    highlight: str | None = None    # wypełniane przez keyword search highlighting
+    status: str | None = None       # "approved" | "draft" — do rerankeringu
+    version: int | None = None      # numer wersji dokumentu — do rerankeringu
 
 
 class SearchResponse(BaseModel):

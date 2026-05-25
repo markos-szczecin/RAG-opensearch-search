@@ -41,15 +41,9 @@ class OutputGuardrail(Guardrail):
         citations: list[Citation]
         answer, citations = payload
 
-        # --- Citation presence ---
-        if not citations:
-            return GuardrailResult(
-                passed=False,
-                action="warn",
-                reason="Answer contains no citations; confidence downgraded",
-            )
-
-        # --- Metadata leakage ---
+        # --- Metadata leakage (security — checked first, highest priority) ---
+        # Blocking takes precedence over citation warnings; an answer leaking
+        # chunk IDs or access_level strings must never reach the user.
         for pattern in _METADATA_LEAK_PATTERNS:
             if pattern.search(answer):
                 return GuardrailResult(
@@ -57,5 +51,13 @@ class OutputGuardrail(Guardrail):
                     action="block",
                     reason="Answer contains internal metadata — blocked before delivery",
                 )
+
+        # --- Citation presence ---
+        if not citations:
+            return GuardrailResult(
+                passed=False,
+                action="warn",
+                reason="Answer contains no citations; confidence downgraded",
+            )
 
         return GuardrailResult(passed=True, action="allow")

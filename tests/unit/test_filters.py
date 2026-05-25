@@ -23,11 +23,18 @@ def test_status_filter_applied(builder: FilterBuilder) -> None:
     assert {"term": {"status": "approved"}} in filter_list
 
 
-def test_no_filters_returns_match_all(builder: FilterBuilder) -> None:
+def test_no_user_filters_still_applies_security_filters(builder: FilterBuilder) -> None:
+    """Security filters (access_level + date validity) are always present.
+
+    A bare match_all would be a security vulnerability — every search must
+    be scoped to the caller's access level regardless of user-provided filters.
+    """
     from app.models.search import SearchFilters
-    filters = SearchFilters(status=None)   # all None
+    filters = SearchFilters(status=None)   # no user-defined filters
     clause = builder.build(filters, user_role="customer")
-    assert clause == {"match_all": {}}
+    filter_list = clause.get("bool", {}).get("filter", [])
+    assert any("access_level" in str(f) for f in filter_list), "access_level filter must always be present"
+    assert any("valid_from" in str(f) for f in filter_list), "date validity filter must always be present"
 
 
 def test_department_filter_applied(builder: FilterBuilder) -> None:
