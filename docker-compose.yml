@@ -77,7 +77,7 @@ services:
     volumes:
       - ./app:/app/app          # hot-reload in dev
       - ./scripts:/app/scripts
-      - ./docs_sample:/docs_sample:ro
+      - ./docs_sample:/docs_sample
     ports:
       - "8000:8000"
     depends_on:

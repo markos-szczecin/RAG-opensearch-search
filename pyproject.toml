@@ -38,8 +38,12 @@ dependencies = [
     # Tokenization
     "tiktoken>=0.8.0",
 
+    # Retry logic (rate limits, network errors)
+    "tenacity>=9.0.0",
+
     # Document parsing
     "pypdf>=5.1.0",
+    "pyyaml>=6.0",   # parsowanie YAML front matter w plikach Markdown
 
     # Embeddings (local fallback)
     "sentence-transformers>=3.3.0",
@@ -54,6 +58,7 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "types-PyYAML>=6.0.0",
+    "debugpy>=1.8.0",
 ]
 
 [tool.hatch.build.targets.wheel]
